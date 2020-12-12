@@ -1,5 +1,6 @@
 package lv.chi.photopicker.adapter
 
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -11,9 +12,13 @@ import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.textview.MaterialTextView
 import lv.chi.photopicker.R
 import lv.chi.photopicker.loader.ImageLoader
+import lv.chi.photopicker.model.SelectedFile
+import lv.chi.photopicker.model.SelectedImage
+import lv.chi.photopicker.model.SelectedMedia
+import lv.chi.photopicker.model.SelectedVideo
 
 internal class MediaPickerAdapter(
-    private val onMediaClick: (SelectableMedia) -> Unit,
+    private val onMediaClick: (SelectedMedia) -> Unit,
     private val multiple: Boolean,
     private val imageLoader: ImageLoader
 ) : RecyclerView.Adapter<MediaPickerAdapter.MediaPickerViewHolder>() {
@@ -21,65 +26,76 @@ internal class MediaPickerAdapter(
     companion object {
         private val TAG = MediaPickerAdapter::class.java.simpleName
 
-        private const val SELECTED_PAYLOAD = "selected_payload"
+        private val diffCallback = object : DiffUtil.ItemCallback<SelectedMedia>() {
+            override fun areItemsTheSame(oldItem: SelectedMedia, newItem: SelectedMedia): Boolean =
+                oldItem.id == newItem.id
 
-        private const val VIEW_TYPE_IMAGE = 100
-        private const val VIEW_TYPE_VIDEO = 101
-
-        private val diffCallback = object : DiffUtil.ItemCallback<SelectableMedia>() {
-            override fun areItemsTheSame(
-                oldItem: SelectableMedia,
-                newItem: SelectableMedia
-            ): Boolean = oldItem.id == newItem.id
-
-            override fun areContentsTheSame(
-                oldItem: SelectableMedia,
-                newItem: SelectableMedia
-            ): Boolean = oldItem == newItem
+            override fun areContentsTheSame(oldItem: SelectedMedia, newItem: SelectedMedia): Boolean =
+                oldItem == newItem
 
             override fun getChangePayload(
-                oldItem: SelectableMedia,
-                newItem: SelectableMedia
+                oldItem: SelectedMedia,
+                newItem: SelectedMedia
             ): Any? = when {
-                oldItem.selected != newItem.selected -> SELECTED_PAYLOAD
+                oldItem.isSelected != newItem.isSelected -> Payload.SELECTED
                 else -> null
             }
         }
     }
 
-    private val asyncListDiffer: AsyncListDiffer<SelectableMedia> by lazy {
+    private object ViewType {
+        const val UNKNOWN = 99
+        const val IMAGE = 100
+        const val VIDEO = 101
+    }
+
+    private object Payload {
+        const val SELECTED = "selected"
+    }
+
+    private val asyncListDiffer: AsyncListDiffer<SelectedMedia> by lazy {
         AsyncListDiffer(this, diffCallback)
     }
 
-    fun submitList(list: List<SelectableMedia>) {
+    fun submitList(list: List<SelectedMedia>) {
         asyncListDiffer.submitList(list)
     }
 
     override fun getItemCount(): Int = asyncListDiffer.currentList.size
 
-    private fun getItem(position: Int): SelectableMedia = asyncListDiffer.currentList[position]
+    private fun getItem(position: Int): SelectedMedia = asyncListDiffer.currentList[position]
 
-    override fun getItemViewType(position: Int): Int =
-        if (getItem(position).type == SelectableMedia.Type.VIDEO) {
-            VIEW_TYPE_VIDEO
-        } else {
-            VIEW_TYPE_IMAGE
+    override fun getItemViewType(position: Int): Int {
+        val item = getItem(position)
+        Log.d(TAG, "item: $item")
+        return when (item) {
+            is SelectedImage -> ViewType.IMAGE
+            is SelectedVideo -> ViewType.VIDEO
+            is SelectedFile -> {
+                when (item.type) {
+                    SelectedFile.Type.IMAGE -> ViewType.IMAGE
+                    SelectedFile.Type.VIDEO -> ViewType.VIDEO
+                    else -> ViewType.UNKNOWN
+                }
+            }
+            else -> ViewType.UNKNOWN
         }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, type: Int): MediaPickerViewHolder {
         val holder = when (type) {
-            VIEW_TYPE_IMAGE -> {
+            ViewType.IMAGE, ViewType.UNKNOWN -> {
                 ImagePickerViewHolder(
                     LayoutInflater
                         .from(parent.context)
-                        .inflate(R.layout.view_pickable_image, parent, false)
+                        .inflate(R.layout.view_selectable_image, parent, false)
                 )
             }
-            VIEW_TYPE_VIDEO -> {
+            ViewType.VIDEO -> {
                 VideoPickerViewHolder(
                     LayoutInflater
                         .from(parent.context)
-                        .inflate(R.layout.view_pickable_video, parent, false)
+                        .inflate(R.layout.view_selectable_video, parent, false)
                 )
             }
             else ->
@@ -95,23 +111,21 @@ internal class MediaPickerAdapter(
         payloads: MutableList<Any>
     ) {
         payloads.firstOrNull()?.let {
-            holder.checkBox.isChecked = getItem(position).selected
+            if (it is String && it == Payload.SELECTED) {
+                holder.checkBox.isChecked = getItem(position).isSelected
+            }
         } ?: super.onBindViewHolder(holder, position, payloads)
     }
 
     override fun onBindViewHolder(holder: MediaPickerViewHolder, position: Int) = with(holder) {
         val item = getItem(position)
 
-        imageLoader.loadImage(itemView.context, holder.imageView, item.uri)
+        imageLoader.loadImage(itemView.context, holder.imageView, item.fileUri)
 
-        holder.checkBox.isChecked = item.selected
+        holder.checkBox.isChecked = item.isSelected
 
-        if (getItemViewType(position) == VIEW_TYPE_VIDEO && holder is VideoPickerViewHolder) {
-            if (item.duration == null) {
-                holder.durationView.setText(R.string.picker_video)
-            } else {
-                holder.durationView.text = item.getDuration()
-            }
+        if (item is SelectedVideo && holder is VideoPickerViewHolder) {
+            holder.durationView.text = item.getDisplayDuration()
         }
 
         itemView.setOnClickListener { onMediaClick(getItem(position)) }

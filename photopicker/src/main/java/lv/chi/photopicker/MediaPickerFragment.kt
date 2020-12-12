@@ -31,8 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import lv.chi.photopicker.MediaPickerViewModel.Companion.SELECTION_UNDEFINED
 import lv.chi.photopicker.adapter.MediaPickerAdapter
-import lv.chi.photopicker.adapter.SelectableMedia
 import lv.chi.photopicker.ext.*
+import lv.chi.photopicker.model.SelectedMedia
+import lv.chi.photopicker.utils.*
 import lv.chi.photopicker.utils.CameraActivity
 import lv.chi.photopicker.utils.NonDismissibleBehavior
 import lv.chi.photopicker.utils.SpacingItemDecoration
@@ -52,7 +53,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
             multiple: Boolean = false,
             allowCamera: Boolean = false,
             maxSelection: Int = SELECTION_UNDEFINED,
-            pickerMode: PickerMode = PickerMode.MEDIA,
+            pickerMode: PickerMode = PickerMode.IMAGE_AND_VIDEO,
             @StyleRes theme: Int = R.style.MediaPicker_Light
         ) = MediaPickerFragment().apply {
             arguments = Bundle().apply {
@@ -74,7 +75,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
     enum class PickerMode {
         IMAGE,
         VIDEO,
-        MEDIA  // Image & video
+        IMAGE_AND_VIDEO
     }
 
     private object Request {
@@ -175,7 +176,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
                 when (pickerMode) {
                     PickerMode.IMAGE -> pickImageGallery()
                     PickerMode.VIDEO -> pickVideoGallery()
-                    PickerMode.MEDIA -> pickMediaGallery()
+                    PickerMode.IMAGE_AND_VIDEO -> pickImageAndVideoGallery()
                 }
             }
             cameraButton.setOnClickListener { pickImageCamera() }
@@ -238,13 +239,16 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
             Request.ADD_MEDIA_CAMERA -> {
                 if (resultCode == Activity.RESULT_OK) {
                     Intents.getCameraResult(data)?.let { output ->
-                        val type = when (getCaptureMode()) {
-                            CameraActivity.CaptureMode.IMAGE -> SelectableMedia.Type.IMAGE
-                            CameraActivity.CaptureMode.VIDEO -> SelectableMedia.Type.VIDEO
-                        }
-                        parentAs<Callback>()?.onCameraMediaPicked(
-                            SelectableMedia.fromCamera(type = type, uri = output)
-                        )
+//                        val type = when (getCaptureMode()) {
+//                            CameraActivity.CaptureMode.IMAGE -> SelectableMedia.Type.IMAGE
+//                            CameraActivity.CaptureMode.VIDEO -> SelectableMedia.Type.VIDEO
+//                        }
+//                        var selectableMedia = SelectableMedia.fromCamera(type = type, uri = output)
+//                        val file = FileUtils.getFile(requireContext(), selectableMedia.uri)
+//                        if (file != null) {
+//                            selectableMedia = selectableMedia.copy(uri = file.toUri())
+//                        }
+//                        parentAs<Callback>()?.onCameraMediaPicked(selectableMedia)
                         dismiss()
                     }
                 }
@@ -262,11 +266,11 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         }
     }
 
-    private fun onMediaClicked(selectableMedia: SelectableMedia) {
+    private fun onMediaClicked(selectedMedia: SelectedMedia) {
         if (getAllowMultiple(requireArguments())) {
-            viewModel.toggleSelected(selectableMedia)
+            viewModel.toggleSelected(selectedMedia)
         } else {
-            parentAs<Callback>()?.onMediaPicked(listOf(selectableMedia))
+            parentAs<Callback>()?.onMediaPicked(listOf(selectedMedia))
             dismiss()
         }
     }
@@ -287,7 +291,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         recyclerView.visibility = if (hasPermission) View.VISIBLE else View.INVISIBLE
     }
 
-    private fun handleSelected(selected: List<SelectableMedia>) {
+    private fun handleSelected(selected: List<SelectedMedia>) {
         if (selected.isEmpty()) {
             snackBar?.dismiss()
             snackBar = null
@@ -312,7 +316,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         }
     }
 
-    private fun handleMedia(media: List<SelectableMedia>) {
+    private fun handleMedia(media: List<SelectedMedia>) {
         viewModel.setInProgress(false)
         mediaPickerAdapter.submitList(media.toMutableList())
         emptyTextView.visibility =
@@ -330,8 +334,8 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
                 getProjection(),
                 null,
                 null,
-                MediaStore.Images.Media.DATE_ADDED + " DESC"
-            )?.use(viewModel::setMedia)
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )?.use { cursor -> viewModel.setMedia(pickerMode, cursor) }
         }
     }
 
@@ -345,29 +349,27 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
                 getProjection(),
                 null,
                 null,
-                MediaStore.Video.Media.DATE_ADDED + " DESC"
-            )?.use(viewModel::setMedia)
+                "${MediaStore.Video.Media.DATE_ADDED} DESC"
+            )?.use { cursor -> viewModel.setMedia(pickerMode, cursor) }
         }
     }
 
-    private fun loadMedia() {
+    private fun loadImageAndVideo() {
         viewModel.setInProgress(true)
         lifecycleScope.launch(Dispatchers.IO + exceptionHandler) {
             val uri = MediaStore.Files.getContentUri("external")
 
-            val selection = (MediaStore.Files.FileColumns.MEDIA_TYPE + "="
-                    + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
+            val selection = (MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
                     + " OR "
-                    + MediaStore.Files.FileColumns.MEDIA_TYPE + "="
-                    + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO)
+                    + MediaStore.Files.FileColumns.MEDIA_TYPE + "=" + MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO)
 
             requireContext().contentResolver.query(
                 uri,
                 getProjection(),
                 selection,
                 null,
-                MediaStore.Files.FileColumns.DATE_ADDED + " DESC"
-            )?.use(viewModel::setMedia)
+                "${MediaStore.Files.FileColumns.DATE_ADDED} DESC"
+            )?.use { cursor -> viewModel.setMedia(pickerMode, cursor) }
         }
     }
 
@@ -385,7 +387,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
             when (pickerMode) {
                 PickerMode.IMAGE -> loadImages()
                 PickerMode.VIDEO -> loadVideos()
-                PickerMode.MEDIA -> loadMedia()
+                PickerMode.IMAGE_AND_VIDEO -> loadImageAndVideo()
             }
         }
     }
@@ -453,7 +455,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         )
     }
 
-    private fun pickMediaGallery() {
+    private fun pickImageAndVideoGallery() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
@@ -479,7 +481,7 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         return when (pickerMode) {
             PickerMode.IMAGE -> CameraActivity.CaptureMode.IMAGE
             PickerMode.VIDEO -> CameraActivity.CaptureMode.VIDEO
-            PickerMode.MEDIA -> CameraActivity.CaptureMode.IMAGE
+            PickerMode.IMAGE_AND_VIDEO -> CameraActivity.CaptureMode.IMAGE
         }
     }
 
@@ -489,10 +491,10 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
         val projection = when (pickerMode) {
             PickerMode.IMAGE -> mutableListOf(
                 MediaStore.Images.ImageColumns._ID,
-                MediaStore.Images.ImageColumns.DATA,
+                MediaStore.Images.ImageColumns.DISPLAY_NAME,
+                MediaStore.Images.ImageColumns.TITLE,
                 MediaStore.Images.ImageColumns.DATE_ADDED,
                 MediaStore.Images.ImageColumns.DATE_MODIFIED,
-                MediaStore.Images.ImageColumns.DISPLAY_NAME,
                 MediaStore.Images.ImageColumns.MIME_TYPE,
                 MediaStore.Images.ImageColumns.SIZE,
                 MediaStore.Images.ImageColumns.WIDTH,
@@ -500,21 +502,22 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
             )
             PickerMode.VIDEO -> mutableListOf(
                 MediaStore.Video.VideoColumns._ID,
-                MediaStore.Video.VideoColumns.DATA,
+                MediaStore.Video.VideoColumns.DISPLAY_NAME,
+                MediaStore.Video.VideoColumns.TITLE,
                 MediaStore.Video.VideoColumns.DATE_ADDED,
                 MediaStore.Video.VideoColumns.DATE_MODIFIED,
-                MediaStore.Video.VideoColumns.DISPLAY_NAME,
                 MediaStore.Video.VideoColumns.MIME_TYPE,
                 MediaStore.Video.VideoColumns.SIZE,
                 MediaStore.Video.VideoColumns.WIDTH,
                 MediaStore.Video.VideoColumns.HEIGHT
             )
-            PickerMode.MEDIA -> mutableListOf(
+            PickerMode.IMAGE_AND_VIDEO -> mutableListOf(
                 MediaStore.Files.FileColumns._ID,
-                MediaStore.Files.FileColumns.DATA,
+                MediaStore.Files.FileColumns.MEDIA_TYPE,
+                MediaStore.Files.FileColumns.DISPLAY_NAME,
+                MediaStore.Files.FileColumns.TITLE,
                 MediaStore.Files.FileColumns.DATE_ADDED,
                 MediaStore.Files.FileColumns.DATE_MODIFIED,
-                MediaStore.Files.FileColumns.DISPLAY_NAME,
                 MediaStore.Files.FileColumns.MIME_TYPE,
                 MediaStore.Files.FileColumns.SIZE,
                 MediaStore.Files.FileColumns.WIDTH,
@@ -526,16 +529,19 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
                 PickerMode.IMAGE -> {
                     projection.add(MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME)
                     projection.add(MediaStore.Images.ImageColumns.DATE_TAKEN)
+                    projection.add(MediaStore.Images.ImageColumns.VOLUME_NAME)
                 }
                 PickerMode.VIDEO -> {
                     projection.add(MediaStore.Video.VideoColumns.BUCKET_DISPLAY_NAME)
                     projection.add(MediaStore.Video.VideoColumns.DATE_TAKEN)
                     projection.add(MediaStore.Video.VideoColumns.DURATION)
+                    projection.add(MediaStore.Video.VideoColumns.VOLUME_NAME)
                 }
-                PickerMode.MEDIA -> {
+                PickerMode.IMAGE_AND_VIDEO -> {
                     projection.add(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
                     projection.add(MediaStore.Files.FileColumns.DATE_TAKEN)
                     projection.add(MediaStore.Files.FileColumns.DURATION)
+                    projection.add(MediaStore.Files.FileColumns.VOLUME_NAME)
                 }
             }
         }
@@ -543,8 +549,8 @@ class MediaPickerFragment : BottomSheetDialogFragment() {
     }
 
     interface Callback {
-        fun onMediaPicked(media: List<SelectableMedia>)
-        fun onCameraMediaPicked(media: SelectableMedia)
+        fun onMediaPicked(selectedMedia: List<SelectedMedia>)
+        fun onCameraMediaPicked(selectedMedia: SelectedMedia)
         fun onGalleryMediaPicked(media: List<Uri>)
     }
 

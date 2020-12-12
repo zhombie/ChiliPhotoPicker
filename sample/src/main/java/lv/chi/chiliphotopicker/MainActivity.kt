@@ -6,7 +6,7 @@ import android.text.method.ScrollingMovementMethod
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.*
 import lv.chi.photopicker.MediaPickerFragment
-import lv.chi.photopicker.adapter.SelectableMedia
+import lv.chi.photopicker.model.SelectedMedia
 
 class MainActivity : AppCompatActivity(), MediaPickerFragment.Callback {
 
@@ -19,12 +19,12 @@ class MainActivity : AppCompatActivity(), MediaPickerFragment.Callback {
         open_picker.setOnClickListener { openPicker() }
     }
 
-    override fun onMediaPicked(media: List<SelectableMedia>) {
-        picked_url.text = media.joinToString(separator = "\n\n") { it.toString() }
+    override fun onMediaPicked(selectedMedia: List<SelectedMedia>) {
+        picked_url.text = selectedMedia.joinToString(separator = "\n\n") { it.toString() }
     }
 
-    override fun onCameraMediaPicked(media: SelectableMedia) {
-        picked_url.text = media.toString()
+    override fun onCameraMediaPicked(selectedMedia: SelectedMedia) {
+        picked_url.text = selectedMedia.toString()
     }
 
     override fun onGalleryMediaPicked(media: List<Uri>) {
@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity(), MediaPickerFragment.Callback {
             multiple = true,
             allowCamera = true,
             maxSelection = 5,
-            pickerMode = MediaPickerFragment.PickerMode.MEDIA,
+            pickerMode = MediaPickerFragment.PickerMode.IMAGE_AND_VIDEO,
             theme = R.style.SampleMediaPicker
         ).show(supportFragmentManager, "picker")
     }

@@ -94,7 +94,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/barrier"
                 app:spanCount="3"
-                tools:listitem="@layout/view_pickable_image" />
+                tools:listitem="@layout/view_selectable_image" />
 
             <include
                 layout="@layout/view_grant_permission"

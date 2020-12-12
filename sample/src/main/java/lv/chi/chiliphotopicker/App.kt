@@ -11,6 +11,7 @@ import coil.decode.SvgDecoder
 import coil.fetch.VideoFrameFileFetcher
 import coil.fetch.VideoFrameUriFetcher
 import lv.chi.chiliphotopicker.loaders.CoilImageLoader
+import lv.chi.chiliphotopicker.loaders.GlideImageLoader
 import lv.chi.photopicker.MediaPicker
 
 class App: Application(), ImageLoaderFactory {
@@ -40,8 +41,8 @@ class App: Application(), ImageLoaderFactory {
         super.onCreate()
 
         MediaPicker.init(
-            loader = CoilImageLoader(),
-//            loader = GlideImageLoader(),
+//            loader = CoilImageLoader(),
+            loader = GlideImageLoader(),
 //            loader = PicassoImageLoader(),
             authority = "lv.chi.sample.fileprovider"
         )
